@@ -1,0 +1,8 @@
+runtime: python39  # 使用Python 3.9运行时
+
+instance_class: F4  # 足够的内存用于加载模型
+
+entrypoint: gunicorn -b :$PORT app:app  # 使用gunicorn启动Flask应用
+
+env_variables:
+  PYTHONUNBUFFERED: "true"  # 确保日志不会被缓冲
