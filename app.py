@@ -59,8 +59,8 @@ def webhook():
         print(f"Processing intent: {intent}")
         
         # Route to appropriate handler based on intent
-        if intent == 'Collect_Book_Length':
-            return handle_book_recommendation(parameters)
+        if intent in ['Collect_Book_Genre', 'Collect_Book_Style', 'Collect_Rating_Preference', 'Collect_Book_Length']:
+            return handle_collect_preferences(intent, parameters)
         elif intent == 'Request_Book_Details':
             return handle_book_details(parameters)
         elif intent == 'Request_Similar_Books':
@@ -92,6 +92,39 @@ def webhook():
         return jsonify({
             'fulfillmentText': 'Sorry, I encountered an error processing your request. Please try again.'
         })
+def handle_collect_preferences(intent, parameters):
+    """
+    Collect book preferences from the conversation context:
+    Check sequentially whether the book type, style, rating, and page count have been collected.
+    If any item is missing, prompt the user for that information; otherwise, call the recommendation interface.
+    """
+    # Extract all related parameters
+    genre = parameters.get('genre', '')
+    style = parameters.get('style', '')
+    rating_level = parameters.get('rating_level', '')
+    length_level = parameters.get('length_level', '')
+    
+    # Check each parameter and prompt the user according to the conversation order
+    if not genre:
+        return jsonify({
+            'fulfillmentText': "Hello! I am the book recommendation assistant. I can recommend books for you based on your preferences. May I ask what type of books you are interested in?"
+        })
+    elif not style:
+        return jsonify({
+            'fulfillmentText': "What kind of book style do you prefer? For example, do you like humorous, adventurous, or serious books?"
+        })
+    elif not rating_level:
+        return jsonify({
+            'fulfillmentText': "Do you have any rating requirements for the books? For example, should I only recommend books with ratings above 4.0?"
+        })
+    elif not length_level:
+        return jsonify({
+            'fulfillmentText': "Do you have any page count requirements for the books? For example, would you like me to recommend books with fewer than 300 pages?"
+        })
+    else:
+        # Once all parameters are collected, call the recommendation logic
+        return handle_book_recommendation(parameters)
+
 
 def handle_book_recommendation(parameters):
     """Process book recommendation request based on collected parameters."""
