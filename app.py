@@ -100,30 +100,43 @@ def webhook():
             return handle_similar_books(req['queryResult'], req)
 
         elif intent == 'Request_New_Conversation - yes' or 'yes' in parameters.get('input', '').lower():
+            # Clear all existing contexts by setting lifespan to 0
+            output_contexts = []
+            for context in req.get('queryResult', {}).get('outputContexts', []):
+                context_name = context.get('name', '')
+                output_contexts.append({
+                    'name': context_name,
+                    'lifespanCount': 0  # Setting to 0 clears the context
+                })
+            
+            # Add a new clean welcome context
+            output_contexts.append({
+                'name': build_context_name('welcome_state', req),
+                'lifespanCount': 5,
+                'parameters': {}
+            })
+            
             return jsonify({
                 'fulfillmentText': 'Great! Let\'s find you some new books. What kind of books are you interested in?',
-                'outputContexts': [
-                    {
-                        'name': build_context_name('welcome_state', None),
-                        'lifespanCount': 5,
-                        'parameters': {}
-                    }
-                ],
+                'outputContexts': output_contexts,
                 'followupEventInput': {
                     'name': 'WELCOME_EVENT',
                     'languageCode': 'en-US'
                 }
             })
-        elif intent == 'Goodbye'or 'no' or 'bye' in parameters.get('input', '').lower():
+        elif intent == 'Goodbye' or intent == 'Request_New_Conversation - no' or ('bye' in parameters.get('input', '').lower()):
+            # Clear all existing contexts by setting lifespan to 0
+            output_contexts = []
+            for context in req.get('queryResult', {}).get('outputContexts', []):
+                context_name = context.get('name', '')
+                output_contexts.append({
+                    'name': context_name,
+                    'lifespanCount': 0  # Setting to 0 clears the context
+                })
+            
             return jsonify({
                 'fulfillmentText': 'Thank you for using our book recommendation service! If you need new recommendations in the future, I\'m always here to help.',
-                'outputContexts': [
-                    {
-                        'name': build_context_name('reset_state', None),
-                        'lifespanCount': 1,
-                        'parameters': {}
-                    }
-                ]
+                'outputContexts': output_contexts
             })
         else:
             return jsonify({
