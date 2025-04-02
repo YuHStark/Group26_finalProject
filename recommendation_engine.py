@@ -146,15 +146,31 @@ class RecommendationEngine:
     
     def ensemble_recommendations(self, genre=None, style=None, min_rating=0, max_pages=None, top_n=5):
         """Combine multiple recommendation algorithms for better results"""
+        # Debug log
+        print(f"Searching with params: genre={genre}, style={style}, min_rating={min_rating}, max_pages={max_pages}")
+        
         # Get recommendations from each algorithm
         content_recs = self.content_based_filter(genre, style, min_rating, max_pages)
         popularity_recs = self.popularity_rank_recommend(min_rating, max_pages)
+        
+        print(f"Content-based results: {len(content_recs)}, Popularity results: {len(popularity_recs)}")
+        
+        # If no results from content filtering, try with more relaxed parameters
+        if len(content_recs) < 2 and genre:
+            # Try with just the first word of the genre
+            simplified_genre = genre.split()[0] if ' ' in genre else genre
+            content_recs = self.content_based_filter(simplified_genre, style, min_rating, max_pages)
+            print(f"Retrying with simplified genre '{simplified_genre}': {len(content_recs)} results")
         
         # Combine and deduplicate recommendations
         all_books = pd.concat([
             content_recs.assign(score=lambda x: x['book_rating'] * 0.7 + x['popularity_score'] * 0.3),
             popularity_recs.assign(score=lambda x: x['book_rating'] * 0.5 + x['popularity_score'] * 0.5)
         ])
+        
+        # Add randomness to ensure variety in recommendations
+        np.random.seed()  # Reset the random seed each time
+        all_books['random_factor'] = np.random.rand(len(all_books)) * 0.2
         
         # Count how many times each book appears across algorithms
         book_counts = all_books.groupby('book_id').size().reset_index(name='algorithm_count')
@@ -163,52 +179,82 @@ class RecommendationEngine:
         scored_recs = all_books.drop_duplicates(subset='book_id').merge(
             book_counts, on='book_id', how='left')
         
-        # Sort first by count (how many algorithms recommended it), then by rating
+        # Sort with the random factor to ensure variety
         final_recs = scored_recs.sort_values(
-            by=['algorithm_count', 'book_rating', 'popularity_score'], 
-            ascending=[False, False, False]
+            by=['algorithm_count', 'book_rating', 'popularity_score', 'random_factor'], 
+            ascending=[False, False, False, False]
         )
         
-        return final_recs.head(top_n)[['book_id', 'book_title', 'book_authors', 
-                                      'book_rating', 'book_pages', 'genres']]
+        results = final_recs.head(top_n)[['book_id', 'book_title', 'book_authors', 
+                                        'book_rating', 'book_pages', 'genres']]
+        
+        print(f"Final recommendations: {len(results)} books")
+        return results
     
     def get_book_details(self, book_title):
-        # Extensive matching attempts
+        """Enhanced book search functionality with improved matching"""
+        if not book_title or not isinstance(book_title, str):
+            print("Invalid book title provided")
+            return None
+            
+        # Clean and standardize the input
         print(f"Searching for book: {book_title}")
+        clean_query = self._preprocess_text(book_title)
+        print(f"Cleaned query: {clean_query}")
         
-        # Exact match (case-insensitive)
+        # 1. Exact match (case-insensitive)
         exact_match = self.df[
             self.df['book_title'].str.lower().str.strip() == book_title.lower().strip()
         ]
         
-        # Partial match
+        # 2. Partial match (more flexible)
         partial_match = self.df[
-            self.df['book_title'].str.contains(book_title, case=False, na=False)
+            self.df['book_title'].str.lower().str.contains(clean_query, case=False, na=False, regex=False)
         ]
         
-        # Fuzzy matching
-        all_titles = self.df['book_title'].tolist()
-        close_matches = difflib.get_close_matches(book_title, all_titles, n=1, cutoff=0.5)
+        # 3. Fuzzy matching with lower threshold
+        all_titles = self.df['book_title'].dropna().tolist()
+        close_matches = difflib.get_close_matches(book_title, all_titles, n=3, cutoff=0.4)
+        
+        # 4. Word-based matching (for cases where title words are out of order)
+        words = set(clean_query.split())
+        if len(words) > 1 and all(len(word) > 1 for word in words):  # Only if we have multiple meaningful words
+            # Calculate word match ratio for each title
+            self.df['match_score'] = self.df['book_title'].apply(
+                lambda x: len(set(self._preprocess_text(str(x)).split()) & words) / len(words) 
+                if isinstance(x, str) else 0
+            )
+            word_matches = self.df[self.df['match_score'] > 0.4].sort_values('match_score', ascending=False)
+        else:
+            word_matches = pd.DataFrame()
         
         print("Exact Match:", len(exact_match))
         print("Partial Match:", len(partial_match))
         print("Close Matches:", close_matches)
+        print("Word Matches:", len(word_matches) if not word_matches.empty else 0)
         
-        # Return details with extensive logging
+        # Use the best matching approach
         if not exact_match.empty:
+            print("Using exact match")
             book = exact_match.iloc[0]
         elif not partial_match.empty:
+            print("Using partial match")
             book = partial_match.iloc[0]
         elif close_matches:
+            print(f"Using fuzzy match: {close_matches[0]}")
             book = self.df[self.df['book_title'] == close_matches[0]].iloc[0]
+        elif not word_matches.empty:
+            print(f"Using word match: {word_matches.iloc[0]['book_title']}")
+            book = word_matches.iloc[0]
         else:
             print(f"No match found for: {book_title}")
             return None
         
         # Print full book details for debugging
-        print("\nBook Details:")
+        print("\nBook Details Found:")
         for col, val in book.items():
-            print(f"{col}: {val}")
+            if col != 'book_desc':  # Skip long description
+                print(f"{col}: {val}")
         
         return {
             'title': book['book_title'],
