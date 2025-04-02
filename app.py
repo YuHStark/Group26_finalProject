@@ -117,7 +117,9 @@ def webhook():
         elif intent == 'Goodbye':
             return jsonify({
                 'fulfillmentText': 'Thank you for using our book recommendation service! If you need new recommendations in the future, I\'m always here to help.',
-                'outputContexts': []
+                'outputContexts': [
+                    'parameters': {}
+                ]
             })
         else:
             return jsonify({
