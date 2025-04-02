@@ -37,20 +37,27 @@ def map_rating_level(rating_level):
     return 0  # Default: no rating filter
 
 def map_length_level(length_level):
-    """Map length level descriptions to page count values."""
+    """Map length level descriptions to page count values.
+    Returns a single integer representing the maximum page count.
+    """
     if not length_level:
         return None
     
-    length_level = length_level.lower()
-    
-    if any(term in length_level for term in ["short", "brief", "quick read", "small"]):
-        return 300
-    elif any(term in length_level for term in ["medium", "average length", "moderate", "normal"]):
-        return 500
-    elif any(term in length_level for term in ["long", "lengthy", "epic", "big"]):
-        return 800
-    elif any(term in length_level for term in ["any", "no preference", "not important"]):
+    # Convert to lowercase for case-insensitive matching
+    if isinstance(length_level, str):
+        length_level = length_level.lower()
+    else:
         return None
+    
+    # Map common phrases to page counts
+    if any(term in length_level for term in ["short", "brief", "quick read", "small"]):
+        return 300  # Books with 300 pages or less
+    elif any(term in length_level for term in ["medium", "average length", "moderate", "normal"]):
+        return 500  # Books with 500 pages or less
+    elif any(term in length_level for term in ["long", "lengthy", "epic", "big"]):
+        return 800  # Books with 800 pages or less
+    elif any(term in length_level for term in ["any", "no preference", "not important"]):
+        return None  # No page limit
     
     # Try to extract a numerical value if present
     import re
@@ -62,7 +69,7 @@ def map_length_level(length_level):
             pass
     
     return None
-
+    
 def get_all_context_parameters(req):
     """
     Merge parameters from all output contexts to carry over information across multi-turn conversations.
@@ -265,13 +272,7 @@ def handle_book_recommendation(parameters):
     print(f"Raw parameters: genre={genre}, style={style}, rating_level={rating_level}, length_level={length_level}")
     
     min_rating = map_rating_level(rating_level)
-    max_pages = None
-    length_value = map_length_level(length_level)
-    
-    if isinstance(length_value, tuple):
-        max_pages = length_value[1]
-    else:
-        max_pages = length_value
+    max_pages = map_length_level(length_level)  # This now consistently returns a single integer or None
     
     print(f"Mapped parameters: min_rating={min_rating}, max_pages={max_pages}")
     
@@ -304,7 +305,7 @@ def handle_book_recommendation(parameters):
             'parameters': parameters
         }]
     })
-
+    
 def handle_book_details(parameters, req):
     """Return detailed information about a specified book with improved error handling."""
     book_title = parameters.get('book_title', '')
