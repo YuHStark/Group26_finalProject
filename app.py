@@ -36,7 +36,9 @@ def get_all_context_parameters(req):
     contexts = req.get('queryResult', {}).get('outputContexts', [])
     params = {}
     for context in contexts:
-        params.update(context.get('parameters', {}))
+        name = context.get('name', '')
+        if 'awaiting_' in name:
+            params.update(context.get('parameters', {}))
     return params
 
 def get_book_from_context(contexts):
