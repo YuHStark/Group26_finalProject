@@ -6,6 +6,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.neighbors import NearestNeighbors
 import zipfile
+import difflib
 
 class RecommendationEngine:
     def __init__(self, processed_data_path):
@@ -173,13 +174,23 @@ class RecommendationEngine:
     
     def get_book_details(self, book_title):
         """Get detailed information for a specific book"""
-        book = self.df[self.df['book_title'].str.contains(book_title, case=False, na=False)]
+        target = book_title.lower().strip()
+        exact_matches = self.df[self.df['book_title'].str.lower().str.strip() == target]
+        if not exact_matches.empty:
+            book = exact_matches.iloc[0]
+       else:
+            all_titles = self.df['book_title'].tolist()
+            close_matches = difflib.get_close_matches(book_title, all_titles, n=1, cutoff=0.6)
+            if close_matches:
+                best_match = close_matches[0]
+                fuzzy_matches = self.df[self.df['book_title'] == best_match]
+                if not fuzzy_matches.empty:
+                    book = fuzzy_matches.iloc[0]
+                else:
+                    return None
+            else:
+                return None
         
-        if len(book) == 0:
-            return None
-        
-        # Return detailed information for the first matching book
-        book = book.iloc[0]
         
         details = {
             'title': book['book_title'],
