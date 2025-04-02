@@ -10,7 +10,6 @@ app = Flask(__name__)
 engine = RecommendationEngine("processed_books.csv.zip")
 
 
-
 # Mapping functions for converting natural language to parameters
 def map_rating_level(rating_level):
     """Map rating level descriptions to numerical values."""
@@ -70,7 +69,6 @@ def build_context_name(context_type, request_json=None):
     
     return f"projects/{PROJECT_ID}/agent/sessions/{SESSION_ID}/contexts/{context_type}"
 
-    
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Handle webhook requests from Dialogflow."""
@@ -88,14 +86,14 @@ def webhook():
         
         # Route to appropriate handler based on intent
         if intent in ['Collect_Book_Genre', 'Collect_Book_Style', 'Collect_Rating_Preference', 'Collect_Book_Length']:
-            return handle_collect_preferences(intent, parameters)
+            return handle_collect_preferences(intent, parameters, req)
         elif intent == 'Request_Book_Details':
             return handle_book_details(parameters)
         elif intent == 'Request_Similar_Books':
             return handle_similar_books(req['queryResult'])
 
         elif intent == 'Request_New_Conversation - yes':
-            #User want to new search
+            # User wants to start a new search
             return jsonify({
                 'fulfillmentText': 'Great! Let\'s find you some new books. What kind of books are you interested in?',
                 'followupEventInput': {
@@ -104,7 +102,7 @@ def webhook():
                 }
             })
         elif intent == 'Goodbye':
-            #User dont want to new search
+            # User does not want a new search
             return jsonify({
                 'fulfillmentText': 'Thank you for using our book recommendation service! If you need new recommendations in the future, I\'m always here to help.'
             })
@@ -120,13 +118,15 @@ def webhook():
         return jsonify({
             'fulfillmentText': 'Sorry, I encountered an error processing your request. Please try again.'
         })
-def handle_collect_preferences(intent, parameters):
+
+def handle_collect_preferences(intent, parameters, req):
     """
     Collect book preferences from the conversation context:
     Check sequentially whether the book type, style, rating, and page count have been collected.
     If any item is missing, prompt the user for that information; otherwise, call the recommendation interface.
     """
-    contexts = request.get_json(silent=True, force=True).get('queryResult', {}).get('outputContexts', [])
+    # Use the already parsed JSON 'req' instead of calling request.get_json again
+    contexts = req.get('queryResult', {}).get('outputContexts', [])
     
     # Helper function to find context value
     def get_context_parameter(context_name, param_name):
@@ -141,9 +141,6 @@ def handle_collect_preferences(intent, parameters):
     rating_level = parameters.get('rating_level', '') or get_context_parameter('awaiting_rating', 'rating_level')
     length_level = parameters.get('length_level', '') or get_context_parameter('awaiting_length', 'length_level')
 
-    # Prepare output contexts to maintain conversation state
-    output_contexts = []
-    
     # Determine the next step in preference collection
     if not genre:
         return jsonify({
@@ -242,9 +239,8 @@ def handle_book_recommendation(parameters):
     
     preferences_text = ", ".join(preferences) if preferences else "your preferences"
     
-    
     # Format response
-    response_text = "Based on your preferences({preferences_text}), I recommend these books:\n\n"
+    response_text = f"Based on your preferences({preferences_text}), I recommend these books:\n\n"
     
     for _, book in recommendations.iterrows():
         response_text += f"• {book['book_title']} – by {book['book_authors']}, "
