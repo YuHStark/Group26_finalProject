@@ -4,3 +4,4 @@ pandas==2.0.2
 numpy==1.24.3
 scikit-learn==1.2.2
 gunicorn==21.2.0
+matplotlib==3.4.2
