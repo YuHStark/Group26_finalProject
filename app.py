@@ -114,11 +114,15 @@ def webhook():
                     'languageCode': 'en-US'
                 }
             })
-        elif intent == 'Goodbye':
+        elif intent == 'Goodbye'or 'no' or 'bye' in parameters.get('input', '').lower():
             return jsonify({
                 'fulfillmentText': 'Thank you for using our book recommendation service! If you need new recommendations in the future, I\'m always here to help.',
                 'outputContexts': [
-                    'parameters': {}
+                    {
+                        'name': build_context_name('reset_state', None),
+                        'lifespanCount': 1,
+                        'parameters': {}
+                    }
                 ]
             })
         else:
