@@ -9,25 +9,7 @@ app = Flask(__name__)
 # Initialize the recommendation engine
 engine = RecommendationEngine("processed_books.csv.zip")
 
-# Log evaluation metrics at startup
-metrics = engine.get_evaluation_metrics()
-print("======= Recommendation Engine Evaluation =======")
-for key, value in metrics.items():
-    if isinstance(value, (float, int)) and value is not None:
-        print(f"{key}: {value:.4f}")
-    else:
-        print(f"{key}: {value}")
-print("===============================================")
 
-# Initialize and register the visualization module
-init_visualization(engine)
-app.register_blueprint(visualization_bp)
-
-# Add a simple redirect to make it easy to access the visualizations
-@app.route('/dashboard')
-def dashboard():
-    """Redirect to visualization dashboard"""
-    return redirect(url_for('visualization.visualize_all'))
 
 # Mapping functions for converting natural language to parameters
 def map_rating_level(rating_level):
