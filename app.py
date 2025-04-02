@@ -35,9 +35,9 @@ def get_all_context_parameters(req):
     """
     contexts = req.get('queryResult', {}).get('outputContexts', [])
     params = {}
-    for context in contexts:
-        params.update(context.get('parameters', {}))
-    return params
+    for context in contexts:
+        params.update(context.get('parameters', {}))
+    return params
 
 def get_book_from_context(contexts):
     """Extract book title from conversation context."""
