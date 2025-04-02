@@ -103,9 +103,11 @@ def webhook():
             return jsonify({
                 'fulfillmentText': 'Great! Let\'s find you some new books. What kind of books are you interested in?',
                 'outputContexts': [
-                    'name':build_context_name('welcome_state', None),
-                    'lifespanCount': 5,
-                    'parameters': {}
+                    {
+                        'name': build_context_name('welcome_state', None),
+                        'lifespanCount': 5,
+                        'parameters': {}
+                    }
                 ],
                 'followupEventInput': {
                     'name': 'WELCOME_EVENT',
