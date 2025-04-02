@@ -34,7 +34,7 @@ def get_all_context_parameters(req):
     Merge parameters from all output contexts to carry over information across multi-turn conversations.
     """
     contexts = req.get('queryResult', {}).get('outputContexts', [])
-    params = {}
+    params = {}
     for context in contexts:
         params.update(context.get('parameters', {}))
     return params
@@ -102,7 +102,12 @@ def webhook():
         elif intent == 'Request_New_Conversation - yes':
             return jsonify({
                 'fulfillmentText': 'Great! Let\'s find you some new books. What kind of books are you interested in?',
-                'outputContexts': [],
+                'outputContexts': [
+                    'name': build_context_name('welcome_state', None),
+                    'lifespanCount': 5,
+                    'parameters': {}
+                    
+                ],
                 'followupEventInput': {
                     'name': 'WELCOME_EVENT',
                     'languageCode': 'en-US'
