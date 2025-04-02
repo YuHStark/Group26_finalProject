@@ -29,6 +29,16 @@ def map_length_level(length_level):
         return 500
     return None  # Default: no page limit
 
+def get_all_context_parameters(req):
+    """
+    Merge parameters from all output contexts to carry over information across multi-turn conversations.
+    """
+    contexts = req.get('queryResult', {}).get('outputContexts', [])
+    params = {}
+    for context in contexts:
+        params.update(context.get('parameters', {}))
+    return params
+
 def get_book_from_context(contexts):
     """Extract book title from conversation context."""
     for context in contexts:
@@ -58,14 +68,13 @@ def build_context_name(context_type, request_json=None):
     PROJECT_ID = "group26-finalproject-n9iq"
     SESSION_ID = "SESSION_ID"  # Default value
     
-    # If request JSON is provided, extract session ID
     if request_json:
         contexts = request_json.get('queryResult', {}).get('outputContexts', [])
         if contexts:
             context_name = contexts[0].get('name', '')
             parts = context_name.split('/')
             if len(parts) >= 5:
-                SESSION_ID = parts[4]  # Session ID is the 5th part in the context path
+                SESSION_ID = parts[4]
     
     return f"projects/{PROJECT_ID}/agent/sessions/{SESSION_ID}/contexts/{context_type}"
 
@@ -74,7 +83,6 @@ def webhook():
     """Handle webhook requests from Dialogflow."""
     req = request.get_json(silent=True, force=True)
     
-    # Log the incoming request for debugging
     print("Request from Dialogflow:")
     print(json.dumps(req, indent=2))
     
@@ -84,16 +92,14 @@ def webhook():
         
         print(f"Processing intent: {intent}")
         
-        # Route to appropriate handler based on intent
         if intent in ['Collect_Book_Genre', 'Collect_Book_Style', 'Collect_Rating_Preference', 'Collect_Book_Length']:
             return handle_collect_preferences(intent, parameters, req)
         elif intent == 'Request_Book_Details':
-            return handle_book_details(parameters)
+            return handle_book_details(parameters, req)
         elif intent == 'Request_Similar_Books':
-            return handle_similar_books(req['queryResult'])
+            return handle_similar_books(req['queryResult'], req)
 
         elif intent == 'Request_New_Conversation - yes':
-            # User wants to start a new search
             return jsonify({
                 'fulfillmentText': 'Great! Let\'s find you some new books. What kind of books are you interested in?',
                 'followupEventInput': {
@@ -102,7 +108,6 @@ def webhook():
                 }
             })
         elif intent == 'Goodbye':
-            # User does not want a new search
             return jsonify({
                 'fulfillmentText': 'Thank you for using our book recommendation service! If you need new recommendations in the future, I\'m always here to help.'
             })
@@ -113,7 +118,6 @@ def webhook():
     
     except Exception as e:
         print(f"Error processing request: {e}")
-        # Print full stack trace for debugging
         traceback.print_exc()
         return jsonify({
             'fulfillmentText': 'Sorry, I encountered an error processing your request. Please try again.'
@@ -121,30 +125,21 @@ def webhook():
 
 def handle_collect_preferences(intent, parameters, req):
     """
-    Collect book preferences from the conversation context:
-    Check sequentially whether the book type, style, rating, and page count have been collected.
-    If any item is missing, prompt the user for that information; otherwise, call the recommendation interface.
+    Collect book preference info:
+    Check if genre, style, rating_level, and length_level are all present.
+    If any are missing, ask the appropriate follow-up question, while storing the collected parameters in context.
+    Once all are collected, proceed to generate recommendations.
     """
-    # Use the already parsed JSON 'req' instead of calling request.get_json again
-    contexts = req.get('queryResult', {}).get('outputContexts', [])
+    all_context_params = get_all_context_parameters(req)
     
-    # Helper function to find context value
-    def get_context_parameter(context_name, param_name):
-        for context in contexts:
-            if context_name in context.get('name', ''):
-                return context.get('parameters', {}).get(param_name, '')
-        return ''
+    genre = parameters.get('genre', '') or all_context_params.get('genre', '')
+    style = parameters.get('style', '') or all_context_params.get('style', '')
+    rating_level = parameters.get('rating_level', '') or all_context_params.get('rating_level', '')
+    length_level = parameters.get('length_level', '') or all_context_params.get('length_level', '')
     
-    # Extract all related parameters
-    genre = parameters.get('genre', '') or get_context_parameter('awaiting_genre', 'genre')
-    style = parameters.get('style', '') or get_context_parameter('awaiting_style', 'style')
-    rating_level = parameters.get('rating_level', '') or get_context_parameter('awaiting_rating', 'rating_level')
-    length_level = parameters.get('length_level', '') or get_context_parameter('awaiting_length', 'length_level')
-
-    # Determine the next step in preference collection
     if not genre:
         return jsonify({
-            'fulfillmentText': "Hello! I am the book recommendation assistant. I can recommend books for you based on your preferences. May I ask what type of books you are interested in?",
+            'fulfillmentText': "What genre of books do you enjoy?",
             'outputContexts': [{
                 'name': build_context_name('awaiting_genre', req),
                 'lifespanCount': 5,
@@ -154,7 +149,7 @@ def handle_collect_preferences(intent, parameters, req):
     
     elif not style:
         return jsonify({
-            'fulfillmentText': "What kind of book style do you prefer? For example, do you like humorous, adventurous, or serious books?",
+            'fulfillmentText': "What kind of style are you looking for? For example, do you prefer humorous, adventurous, or serious books?",
             'outputContexts': [{
                 'name': build_context_name('awaiting_style', req),
                 'lifespanCount': 5,
@@ -166,7 +161,7 @@ def handle_collect_preferences(intent, parameters, req):
     
     elif not rating_level:
         return jsonify({
-            'fulfillmentText': "Do you have any rating requirements for the books? For example, should I only recommend books with ratings above 4.0?",
+            'fulfillmentText': "Do you have a rating preference? For example, only recommend books rated 4.0 and above?",
             'outputContexts': [{
                 'name': build_context_name('awaiting_rating', req),
                 'lifespanCount': 5,
@@ -179,7 +174,7 @@ def handle_collect_preferences(intent, parameters, req):
     
     elif not length_level:
         return jsonify({
-            'fulfillmentText': "Do you have any page count requirements for the books? For example, would you like me to recommend books with fewer than 300 pages?",
+            'fulfillmentText': "Do you have a page length preference? For example, books under 300 pages?",
             'outputContexts': [{
                 'name': build_context_name('awaiting_length', req),
                 'lifespanCount': 5,
@@ -192,28 +187,28 @@ def handle_collect_preferences(intent, parameters, req):
         })
     
     else:
-        # Once all parameters are collected, call the recommendation logic
-        return handle_book_recommendation(parameters)
+        return handle_book_recommendation({
+            'genre': genre,
+            'style': style,
+            'rating_level': rating_level,
+            'length_level': length_level
+        })
 
 def handle_book_recommendation(parameters):
-    """Process book recommendation request based on collected parameters."""
-    # Extract and map parameters
+    """Call the recommendation engine and return recommended books based on collected preferences."""
     genre = parameters.get('genre', '')
     style = parameters.get('style', '')
     rating_level = parameters.get('rating_level', '')
     length_level = parameters.get('length_level', '')
     
-    # Map to numerical values
     min_rating = map_rating_level(rating_level)
     max_pages = None
-    
     length_value = map_length_level(length_level)
     if isinstance(length_value, tuple):
-        max_pages = length_value[1]  # Use the upper bound
+        max_pages = length_value[1]
     else:
         max_pages = length_value
     
-    # Get recommendations using ensemble method
     recommendations = engine.ensemble_recommendations(
         genre=genre, 
         style=style, 
@@ -224,43 +219,33 @@ def handle_book_recommendation(parameters):
     
     if recommendations.empty:
         return jsonify({
-            'fulfillmentText': 'I couldn\'t find any books matching your preferences. Would you like to try with different criteria?'
+            'fulfillmentText': 'Sorry, no books matched your preferences. Would you like to change the criteria?'
         })
-
-    preferences = []
-    if genre:
-        preferences.append(f"genre: {genre}")
-    if style:
-        preferences.append(f"style: {style}")
-    if rating_level:
-        preferences.append(f"rating: {rating_level}")
-    if length_level:
-        preferences.append(f"length: {length_level}")
     
-    preferences_text = ", ".join(preferences) if preferences else "your preferences"
-    
-    # Format response
-    response_text = f"Based on your preferences({preferences_text}), I recommend these books:\n\n"
+    preferences_text = f"Genre: {genre}, Style: {style}, Rating: {rating_level}, Length: {length_level}"
+    response_text = f"Based on your preferences ({preferences_text}), I recommend the following books:\n\n"
     
     for _, book in recommendations.iterrows():
-        response_text += f"• {book['book_title']} – by {book['book_authors']}, "
-        response_text += f"rating: {book['book_rating']:.1f}, {book['book_pages']} pages\n"
+        response_text += f"• {book['book_title']} – Author: {book['book_authors']}, Rating: {book['book_rating']:.1f}, Pages: {book['book_pages']}\n"
     
-    response_text += "\nWould you like to know more details about any of these books?"
+    response_text += "\nWould you like to know more about any of these books?"
     
     return jsonify({
-        'fulfillmentText': response_text
+        'fulfillmentText': response_text,
+        'outputContexts': [{
+            'name': build_context_name('has_preferences', None),
+            'lifespanCount': 10,
+            'parameters': parameters
+        }]
     })
 
-def handle_book_details(parameters):
-    """Handle request for detailed information about a specific book."""
-    req = request.get_json(silent=True, force=True)
+def handle_book_details(parameters, req):
+    """Return detailed information about a specified book."""
     book_title = parameters.get('book_title', '')
     
-    # If no book title, indicate what to do next
     if not book_title:
         return jsonify({
-            'fulfillmentText': 'Which book would you like to know more about?',
+            'fulfillmentText': 'Which book would you like details about?',
             'outputContexts': [{
                 'name': build_context_name('awaiting_details', req),
                 'lifespanCount': 5
@@ -271,7 +256,7 @@ def handle_book_details(parameters):
     
     if not book_details:
         return jsonify({
-            'fulfillmentText': f'I couldn\'t find details for a book titled "{book_title}". Could you check the spelling or try another book?',
+            'fulfillmentText': f'Sorry, no book found with the title "{book_title}". Please check the title and try again.',
             'outputContexts': [{
                 'name': build_context_name('awaiting_details', req),
                 'lifespanCount': 5,
@@ -281,14 +266,13 @@ def handle_book_details(parameters):
             }]
         })
     
-    # Format detailed response
-    response_text = f"Here are the details about '{book_details['title']}':\n\n"
+    response_text = f"Details for \"{book_details['title']}\":\n\n"
     response_text += f"【Description】 {book_details['description']}\n\n"
     response_text += f"【Author】 {book_details['author']}\n"
     response_text += f"【Genre】 {book_details['genres']}\n"
     response_text += f"【Rating】 {book_details['rating']:.1f} (based on {book_details['rating_count']} reviews)\n"
     response_text += f"【Pages】 {book_details['pages']}\n\n"
-    response_text += "Would you like to find books similar to this one?"
+    response_text += "Would you like recommendations for similar books?"
     
     return jsonify({
         'fulfillmentText': response_text,
@@ -301,19 +285,18 @@ def handle_book_details(parameters):
         }]
     })
 
-def handle_similar_books(query_result):
-    """Handle request for books similar to a specific title."""
-    req = request.get_json(silent=True, force=True)
+def handle_similar_books(query_result, req):
+    """Return book recommendations similar to the given title."""
     parameters = query_result.get('parameters', {})
     book_title = parameters.get('book_title', '')
     
-    # If no book title in parameters, try to get from context
     if not book_title:
-        book_title = get_book_from_context(query_result.get('outputContexts', []))
+        all_contexts = req.get('queryResult', {}).get('outputContexts', [])
+        book_title = get_book_from_context(all_contexts)
     
     if not book_title:
         return jsonify({
-            'fulfillmentText': 'Which book would you like to find similar titles for?',
+            'fulfillmentText': 'Which book would you like similar recommendations for?',
             'outputContexts': [{
                 'name': build_context_name('has_book_context', req),
                 'lifespanCount': 5
@@ -324,7 +307,7 @@ def handle_similar_books(query_result):
     
     if similar_books.empty:
         return jsonify({
-            'fulfillmentText': f'I couldn\'t find any books similar to "{book_title}". Would you like to try with a different book?',
+            'fulfillmentText': f'Sorry, no similar books found for "{book_title}". Would you like to try a different title?',
             'outputContexts': [{
                 'name': build_context_name('has_book_context', req),
                 'lifespanCount': 5,
@@ -334,14 +317,10 @@ def handle_similar_books(query_result):
             }]
         })
     
-    # Format response
-    response_text = f"Here are some books similar to '{book_title}':\n\n"
-    
+    response_text = f"Here are some books similar to \"{book_title}\":\n\n"
     for _, book in similar_books.iterrows():
-        response_text += f"• {book['book_title']} – by {book['book_authors']}, "
-        response_text += f"rating: {book['book_rating']:.1f}\n"
-    
-    response_text += "\nWould you like to start a new recommendation search?"
+        response_text += f"• {book['book_title']} – Author: {book['book_authors']}, Rating: {book['book_rating']:.1f}\n"
+    response_text += "\nWould you like more recommendations?"
     
     return jsonify({
         'fulfillmentText': response_text,
@@ -353,7 +332,7 @@ def handle_similar_books(query_result):
             }
         }]
     })
-    
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
