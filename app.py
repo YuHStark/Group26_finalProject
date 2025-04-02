@@ -102,6 +102,7 @@ def webhook():
         elif intent == 'Request_New_Conversation - yes':
             return jsonify({
                 'fulfillmentText': 'Great! Let\'s find you some new books. What kind of books are you interested in?',
+                'outputContexts': [],
                 'followupEventInput': {
                     'name': 'WELCOME_EVENT',
                     'languageCode': 'en-US'
@@ -110,6 +111,7 @@ def webhook():
         elif intent == 'Goodbye':
             return jsonify({
                 'fulfillmentText': 'Thank you for using our book recommendation service! If you need new recommendations in the future, I\'m always here to help.'
+                'outputContexts': []
             })
         else:
             return jsonify({
