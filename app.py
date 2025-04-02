@@ -34,12 +34,10 @@ def get_all_context_parameters(req):
     Merge parameters from all output contexts to carry over information across multi-turn conversations.
     """
     contexts = req.get('queryResult', {}).get('outputContexts', [])
-    params = {}
-    for context in contexts:
-        name = context.get('name', '')
-        if 'awaiting_' in name:
-            params.update(context.get('parameters', {}))
-    return params
+    params = {}
+    for context in contexts:
+        params.update(context.get('parameters', {}))
+    return params
 
 def get_book_from_context(contexts):
     """Extract book title from conversation context."""
