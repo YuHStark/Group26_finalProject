@@ -70,13 +70,6 @@ def build_context_name(context_type, request_json=None):
     
     return f"projects/{PROJECT_ID}/agent/sessions/{SESSION_ID}/contexts/{context_type}"
 
-@app.route('/', methods=['GET'])
-def index():
-    """Basic endpoint to verify the API is running."""
-    return jsonify({
-        'status': 'online',
-        'message': 'Book Recommendation API is running'
-    })
     
 @app.route('/webhook', methods=['POST'])
 def webhook():
