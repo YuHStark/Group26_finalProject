@@ -99,7 +99,7 @@ def webhook():
         elif intent == 'Request_Similar_Books':
             return handle_similar_books(req['queryResult'], req)
 
-        elif intent == 'Request_New_Conversation - yes':
+        elif intent == 'Request_New_Conversation - yes' or 'yes' in parameters.get('input', '').lower():
             return jsonify({
                 'fulfillmentText': 'Great! Let\'s find you some new books. What kind of books are you interested in?',
                 'outputContexts': [
