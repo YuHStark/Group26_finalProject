@@ -152,8 +152,8 @@ class RecommendationEngine:
         
         # Combine and deduplicate recommendations
         all_books = pd.concat([
-            content_recs.assign(algorithm='content'),
-            popularity_recs.assign(algorithm='popularity')
+            content_recs.assign(score=lambda x: x['book_rating'] * 0.7 + x['popularity_score'] * 0.3),
+            popularity_recs.assign(score=lambda x: x['book_rating'] * 0.5 + x['popularity_score'] * 0.5)
         ])
         
         # Count how many times each book appears across algorithms
@@ -173,32 +173,49 @@ class RecommendationEngine:
                                       'book_rating', 'book_pages', 'genres']]
     
     def get_book_details(self, book_title):
-        """Get detailed information for a specific book"""
-        target = book_title.lower().strip()
-        exact_matches = self.df[self.df['book_title'].str.lower().str.strip() == target]
-        if not exact_matches.empty:
-            book = exact_matches.iloc[0]
+        # Extensive matching attempts
+        print(f"Searching for book: {book_title}")
+        
+        # Exact match (case-insensitive)
+        exact_match = self.df[
+            self.df['book_title'].str.lower().str.strip() == book_title.lower().strip()
+        ]
+        
+        # Partial match
+        partial_match = self.df[
+            self.df['book_title'].str.contains(book_title, case=False, na=False)
+        ]
+        
+        # Fuzzy matching
+        all_titles = self.df['book_title'].tolist()
+        close_matches = difflib.get_close_matches(book_title, all_titles, n=1, cutoff=0.5)
+        
+        print("Exact Match:", len(exact_match))
+        print("Partial Match:", len(partial_match))
+        print("Close Matches:", close_matches)
+        
+        # Return details with extensive logging
+        if not exact_match.empty:
+            book = exact_match.iloc[0]
+        elif not partial_match.empty:
+            book = partial_match.iloc[0]
+        elif close_matches:
+            book = self.df[self.df['book_title'] == close_matches[0]].iloc[0]
         else:
-            all_titles = self.df['book_title'].tolist()
-            close_matches = difflib.get_close_matches(book_title, all_titles, n=1, cutoff=0.6)
-            if close_matches:
-                best_match = close_matches[0]
-                fuzzy_matches = self.df[self.df['book_title'] == best_match]
-                if not fuzzy_matches.empty:
-                    book = fuzzy_matches.iloc[0]
-                else:
-                    return None
-            else:
-                return None
-        details = {
+            print(f"No match found for: {book_title}")
+            return None
+        
+        # Print full book details for debugging
+        print("\nBook Details:")
+        for col, val in book.items():
+            print(f"{col}: {val}")
+        
+        return {
             'title': book['book_title'],
             'author': book['book_authors'],
             'description': book['book_desc'],
             'genres': book['genres'],
             'rating': book['book_rating'],
             'rating_count': book['book_rating_count'],
-            'pages': book['book_pages'],
-            'format': book.get('book_format', 'Unknown')
+            'pages': book['book_pages']
         }
-        
-        return details
