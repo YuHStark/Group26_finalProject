@@ -9,6 +9,26 @@ app = Flask(__name__)
 # Initialize the recommendation engine
 engine = RecommendationEngine("processed_books.csv.zip")
 
+# Log evaluation metrics at startup
+metrics = engine.get_evaluation_metrics()
+print("======= Recommendation Engine Evaluation =======")
+for key, value in metrics.items():
+    if isinstance(value, (float, int)) and value is not None:
+        print(f"{key}: {value:.4f}")
+    else:
+        print(f"{key}: {value}")
+print("===============================================")
+
+# Initialize and register the visualization module
+init_visualization(engine)
+app.register_blueprint(visualization_bp)
+
+# Add a simple redirect to make it easy to access the visualizations
+@app.route('/dashboard')
+def dashboard():
+    """Redirect to visualization dashboard"""
+    return redirect(url_for('visualization.visualize_all'))
+
 # Mapping functions for converting natural language to parameters
 def map_rating_level(rating_level):
     """Map rating level descriptions to numerical values."""
@@ -43,6 +63,39 @@ def index():
         'message': 'Book Recommendation API is running'
     })
 
+def build_context_name(context_type, request_json=None):
+    """
+    Build a proper context name with project ID and session ID.
+    
+    Args:
+        context_type: The type of context (e.g. 'awaiting_genre')
+        request_json: The JSON request object to extract session information
+        
+    Returns:
+        Full context name for Dialogflow
+    """
+    PROJECT_ID = "group26-finalproject-n9iq"
+    SESSION_ID = "SESSION_ID"  # Default value
+    
+    # If request JSON is provided, extract session ID
+    if request_json:
+        contexts = request_json.get('queryResult', {}).get('outputContexts', [])
+        if contexts:
+            context_name = contexts[0].get('name', '')
+            parts = context_name.split('/')
+            if len(parts) >= 5:
+                SESSION_ID = parts[4]  # Session ID is the 5th part in the context path
+    
+    return f"projects/{PROJECT_ID}/agent/sessions/{SESSION_ID}/contexts/{context_type}"
+
+@app.route('/', methods=['GET'])
+def index():
+    """Basic endpoint to verify the API is running."""
+    return jsonify({
+        'status': 'online',
+        'message': 'Book Recommendation API is running'
+    })
+    
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Handle webhook requests from Dialogflow."""
@@ -98,33 +151,77 @@ def handle_collect_preferences(intent, parameters):
     Check sequentially whether the book type, style, rating, and page count have been collected.
     If any item is missing, prompt the user for that information; otherwise, call the recommendation interface.
     """
-    # Extract all related parameters
-    genre = parameters.get('genre', '')
-    style = parameters.get('style', '')
-    rating_level = parameters.get('rating_level', '')
-    length_level = parameters.get('length_level', '')
+    contexts = request.get_json(silent=True, force=True).get('queryResult', {}).get('outputContexts', [])
     
-    # Check each parameter and prompt the user according to the conversation order
+    # Helper function to find context value
+    def get_context_parameter(context_name, param_name):
+        for context in contexts:
+            if context_name in context.get('name', ''):
+                return context.get('parameters', {}).get(param_name, '')
+        return ''
+    
+    # Extract all related parameters
+    genre = parameters.get('genre', '') or get_context_parameter('awaiting_genre', 'genre')
+    style = parameters.get('style', '') or get_context_parameter('awaiting_style', 'style')
+    rating_level = parameters.get('rating_level', '') or get_context_parameter('awaiting_rating', 'rating_level')
+    length_level = parameters.get('length_level', '') or get_context_parameter('awaiting_length', 'length_level')
+
+    # Prepare output contexts to maintain conversation state
+    output_contexts = []
+    
+    # Determine the next step in preference collection
     if not genre:
         return jsonify({
-            'fulfillmentText': "Hello! I am the book recommendation assistant. I can recommend books for you based on your preferences. May I ask what type of books you are interested in?"
+            'fulfillmentText': "Hello! I am the book recommendation assistant. I can recommend books for you based on your preferences. May I ask what type of books you are interested in?",
+            'outputContexts': [{
+                'name': build_context_name('awaiting_genre', req),
+                'lifespanCount': 5,
+                'parameters': {}
+            }]
         })
+    
     elif not style:
         return jsonify({
-            'fulfillmentText': "What kind of book style do you prefer? For example, do you like humorous, adventurous, or serious books?"
+            'fulfillmentText': "What kind of book style do you prefer? For example, do you like humorous, adventurous, or serious books?",
+            'outputContexts': [{
+                'name': build_context_name('awaiting_style', req),
+                'lifespanCount': 5,
+                'parameters': {
+                    'genre': genre
+                }
+            }]
         })
+    
     elif not rating_level:
         return jsonify({
-            'fulfillmentText': "Do you have any rating requirements for the books? For example, should I only recommend books with ratings above 4.0?"
+            'fulfillmentText': "Do you have any rating requirements for the books? For example, should I only recommend books with ratings above 4.0?",
+            'outputContexts': [{
+                'name': build_context_name('awaiting_rating', req),
+                'lifespanCount': 5,
+                'parameters': {
+                    'genre': genre,
+                    'style': style
+                }
+            }]
         })
+    
     elif not length_level:
         return jsonify({
-            'fulfillmentText': "Do you have any page count requirements for the books? For example, would you like me to recommend books with fewer than 300 pages?"
+            'fulfillmentText': "Do you have any page count requirements for the books? For example, would you like me to recommend books with fewer than 300 pages?",
+            'outputContexts': [{
+                'name': build_context_name('awaiting_length', req),
+                'lifespanCount': 5,
+                'parameters': {
+                    'genre': genre,
+                    'style': style,
+                    'rating_level': rating_level
+                }
+            }]
         })
+    
     else:
         # Once all parameters are collected, call the recommendation logic
         return handle_book_recommendation(parameters)
-
 
 def handle_book_recommendation(parameters):
     """Process book recommendation request based on collected parameters."""
@@ -186,18 +283,31 @@ def handle_book_recommendation(parameters):
 
 def handle_book_details(parameters):
     """Handle request for detailed information about a specific book."""
+    req = request.get_json(silent=True, force=True)
     book_title = parameters.get('book_title', '')
     
+    # If no book title, indicate what to do next
     if not book_title:
         return jsonify({
-            'fulfillmentText': 'Which book would you like to know more about?'
+            'fulfillmentText': 'Which book would you like to know more about?',
+            'outputContexts': [{
+                'name': build_context_name('awaiting_details', req),
+                'lifespanCount': 5
+            }]
         })
     
     book_details = engine.get_book_details(book_title)
     
     if not book_details:
         return jsonify({
-            'fulfillmentText': f'I couldn\'t find details for a book titled "{book_title}". Could you check the spelling or try another book?'
+            'fulfillmentText': f'I couldn\'t find details for a book titled "{book_title}". Could you check the spelling or try another book?',
+            'outputContexts': [{
+                'name': build_context_name('awaiting_details', req),
+                'lifespanCount': 5,
+                'parameters': {
+                    'book_title': book_title
+                }
+            }]
         })
     
     # Format detailed response
@@ -210,11 +320,19 @@ def handle_book_details(parameters):
     response_text += "Would you like to find books similar to this one?"
     
     return jsonify({
-        'fulfillmentText': response_text
+        'fulfillmentText': response_text,
+        'outputContexts': [{
+            'name': build_context_name('has_book_context', req),
+            'lifespanCount': 5,
+            'parameters': {
+                'book_title': book_details['title']
+            }
+        }]
     })
 
 def handle_similar_books(query_result):
     """Handle request for books similar to a specific title."""
+    req = request.get_json(silent=True, force=True)
     parameters = query_result.get('parameters', {})
     book_title = parameters.get('book_title', '')
     
@@ -224,14 +342,25 @@ def handle_similar_books(query_result):
     
     if not book_title:
         return jsonify({
-            'fulfillmentText': 'Which book would you like to find similar titles for?'
+            'fulfillmentText': 'Which book would you like to find similar titles for?',
+            'outputContexts': [{
+                'name': build_context_name('has_book_context', req),
+                'lifespanCount': 5
+            }]
         })
     
     similar_books = engine.find_similar_books_knn(book_title, n=3)
     
     if similar_books.empty:
         return jsonify({
-            'fulfillmentText': f'I couldn\'t find any books similar to "{book_title}". Would you like to try with a different book?'
+            'fulfillmentText': f'I couldn\'t find any books similar to "{book_title}". Would you like to try with a different book?',
+            'outputContexts': [{
+                'name': build_context_name('has_book_context', req),
+                'lifespanCount': 5,
+                'parameters': {
+                    'book_title': book_title
+                }
+            }]
         })
     
     # Format response
@@ -244,9 +373,16 @@ def handle_similar_books(query_result):
     response_text += "\nWould you like to start a new recommendation search?"
     
     return jsonify({
-        'fulfillmentText': response_text
+        'fulfillmentText': response_text,
+        'outputContexts': [{
+            'name': build_context_name('has_book_context', req),
+            'lifespanCount': 5,
+            'parameters': {
+                'book_title': book_title
+            }
+        }]
     })
-
+    
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
