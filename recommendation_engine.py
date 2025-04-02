@@ -178,7 +178,7 @@ class RecommendationEngine:
         exact_matches = self.df[self.df['book_title'].str.lower().str.strip() == target]
         if not exact_matches.empty:
             book = exact_matches.iloc[0]
-       else:
+        else:
             all_titles = self.df['book_title'].tolist()
             close_matches = difflib.get_close_matches(book_title, all_titles, n=1, cutoff=0.6)
             if close_matches:
@@ -190,8 +190,6 @@ class RecommendationEngine:
                     return None
             else:
                 return None
-        
-        
         details = {
             'title': book['book_title'],
             'author': book['book_authors'],
