@@ -13,21 +13,55 @@ engine = RecommendationEngine("processed_books.csv.zip")
 # Mapping functions for converting natural language to parameters
 def map_rating_level(rating_level):
     """Map rating level descriptions to numerical values."""
-    if rating_level in ["high rating", "good rating", "excellent", "high", "good"]:
+    if not rating_level:
+        return 0
+    
+    rating_level = rating_level.lower()
+    
+    if any(term in rating_level for term in ["high rating", "good rating", "excellent", "high", "good", "best", "top"]):
         return 4.0
-    elif rating_level in ["average", "medium", "decent"]:
+    elif any(term in rating_level for term in ["average", "medium", "decent", "ok", "okay"]):
         return 3.0
+    elif any(term in rating_level for term in ["any", "no preference", "not important"]):
+        return 0
+    
+    # Try to extract a numerical value if present
+    import re
+    numbers = re.findall(r'\d+(?:\.\d+)?', rating_level)
+    if numbers:
+        try:
+            return float(numbers[0])
+        except ValueError:
+            pass
+    
     return 0  # Default: no rating filter
 
 def map_length_level(length_level):
     """Map length level descriptions to page count values."""
-    if length_level in ["short", "brief", "quick read"]:
+    if not length_level:
+        return None
+    
+    length_level = length_level.lower()
+    
+    if any(term in length_level for term in ["short", "brief", "quick read", "small"]):
         return 300
-    elif length_level in ["medium", "average length", "moderate"]:
-        return (300, 500)  # Returns a tuple for range
-    elif length_level in ["long", "lengthy", "epic"]:
+    elif any(term in length_level for term in ["medium", "average length", "moderate", "normal"]):
         return 500
-    return None  # Default: no page limit
+    elif any(term in length_level for term in ["long", "lengthy", "epic", "big"]):
+        return 800
+    elif any(term in length_level for term in ["any", "no preference", "not important"]):
+        return None
+    
+    # Try to extract a numerical value if present
+    import re
+    numbers = re.findall(r'\d+', length_level)
+    if numbers:
+        try:
+            return int(numbers[0])
+        except ValueError:
+            pass
+    
+    return None
 
 def get_all_context_parameters(req):
     """
@@ -228,13 +262,18 @@ def handle_book_recommendation(parameters):
     rating_level = parameters.get('rating_level', '')
     length_level = parameters.get('length_level', '')
     
+    print(f"Raw parameters: genre={genre}, style={style}, rating_level={rating_level}, length_level={length_level}")
+    
     min_rating = map_rating_level(rating_level)
     max_pages = None
     length_value = map_length_level(length_level)
+    
     if isinstance(length_value, tuple):
         max_pages = length_value[1]
     else:
         max_pages = length_value
+    
+    print(f"Mapped parameters: min_rating={min_rating}, max_pages={max_pages}")
     
     recommendations = engine.ensemble_recommendations(
         genre=genre, 
@@ -267,8 +306,10 @@ def handle_book_recommendation(parameters):
     })
 
 def handle_book_details(parameters, req):
-    """Return detailed information about a specified book."""
+    """Return detailed information about a specified book with improved error handling."""
     book_title = parameters.get('book_title', '')
+    
+    print(f"Received book detail request for: '{book_title}'")
     
     if not book_title:
         return jsonify({
@@ -282,8 +323,19 @@ def handle_book_details(parameters, req):
     book_details = engine.get_book_details(book_title)
     
     if not book_details:
+        # Try to get the book from the recommendation context
+        all_context_params = get_all_context_parameters(req)
+        if 'recommendations' in all_context_params:
+            # This assumes you've stored recommendations in the context
+            for rec_book in all_context_params.get('recommendations', []):
+                if any(term in rec_book['book_title'].lower() for term in book_title.lower().split()):
+                    print(f"Found book in recommendation context: {rec_book['book_title']}")
+                    book_details = engine.get_book_details(rec_book['book_title'])
+                    break
+    
+    if not book_details:
         return jsonify({
-            'fulfillmentText': f'Sorry, no book found with the title "{book_title}". Please check the title and try again.',
+            'fulfillmentText': f'I couldn\'t find a book with the title "{book_title}". Could you check the spelling or try a different book?',
             'outputContexts': [{
                 'name': build_context_name('awaiting_details', req),
                 'lifespanCount': 5,
